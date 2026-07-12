@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>our story</title>
+    <meta name="description" content="一个可拖拽漫游的无限照片画布。">
+    <link rel="stylesheet" href="styles.css?v=14">
+  </head>
+  <body>
+    <main class="experience" aria-label="无限照片画布">
+      <div id="space" aria-label="可拖拽照片画布">
+        <div id="world"></div>
+      </div>
+
+      <section class="hud" aria-label="照片画布控制">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>our story</span>
+        </div>
+        <div class="actions">
+          <button id="musicButton" class="icon-button music-button" type="button" aria-label="播放背景音乐" aria-pressed="false">
+            <span aria-hidden="true">♪</span>
+          </button>
+          <button id="shuffleButton" class="icon-button" type="button" aria-label="重新排布照片">
+            <span aria-hidden="true">↻</span>
+          </button>
+          <button id="driftButton" class="pill-button" type="button" aria-pressed="true">漂浮</button>
+        </div>
+      </section>
+
+      <aside class="counter" aria-live="polite">
+        <span id="photoCount">32</span>
+        <span>张照片</span>
+      </aside>
+
+      <div class="hint" aria-hidden="true">拖动漫游 · 前滚放大 · 后滚缩小 · 点击放大</div>
+    </main>
+
+    <div id="enterOverlay" class="enter-overlay" role="dialog" aria-label="进入照片画布">
+      <div class="enter-panel">
+        <div class="enter-kicker">PHOTO CANVAS</div>
+        <h1>our story</h1>
+        <p>点击进入后播放背景音乐。</p>
+        <button id="enterButton" class="enter-button" type="button">进入</button>
+      </div>
+    </div>
+
+    <div id="lightbox" class="lightbox" aria-hidden="true" role="dialog" aria-label="放大照片">
+      <button id="closeLightbox" class="close-button" type="button" aria-label="关闭">×</button>
+      <img id="lightboxImage" alt="">
+      <div id="lightboxCaption" class="caption"></div>
+    </div>
+
+    <audio id="backgroundMusic" preload="auto" loop>
+      <source src="music/background.mp3" type="audio/mpeg">
+      <source src="music/background.m4a" type="audio/mp4">
+    </audio>
+    <script src="photos.js?v=14"></script>
+    <script src="app.js?v=14"></script>
+  </body>
+</html>
