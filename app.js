@@ -20,9 +20,12 @@
   const FOCAL_LENGTH = 960;
   const NEAR = 180;
   const FAR = 4700;
-  const MAX_VEL = 56;
-  const VEL_LERP = 0.18;
-  const VEL_DECAY = 0.925;
+  const MAX_VEL = 118;
+  const VEL_LERP = 0.3;
+  const VEL_DECAY = 0.89;
+  const DRAG_FORCE = 0.12;
+  const WHEEL_FORCE = 0.074;
+  const PINCH_ZOOM_FORCE = 0.42;
 
   const state = {
     camera: { x: 0, y: 0, z: 0 },
@@ -47,6 +50,13 @@
   let cards = [];
   let rafId = 0;
   let musicUnavailable = false;
+  const activePointers = new Map();
+  const pinch = {
+    active: false,
+    distance: 0,
+    centerX: 0,
+    centerY: 0
+  };
 
   function seededRandom(seed) {
     const value = Math.sin(seed * 9283.731) * 10000;
@@ -296,6 +306,22 @@
 
   function handlePointerDown(event) {
     if (lightbox.classList.contains("is-open")) return;
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    space.setPointerCapture(event.pointerId);
+
+    if (activePointers.size >= 2) {
+      const center = getPointerCenter();
+      pinch.active = true;
+      pinch.distance = getPointerDistance();
+      pinch.centerX = center.x;
+      pinch.centerY = center.y;
+      state.dragging = false;
+      state.pointerId = null;
+      state.pressedPhoto = null;
+      state.moved = 20;
+      return;
+    }
+
     const photoCard = event.target.closest ? event.target.closest(".photo-card") : null;
     state.dragging = true;
     state.pointerId = event.pointerId;
@@ -303,12 +329,33 @@
     state.lastY = event.clientY;
     state.moved = 0;
     state.pressedPhoto = photoCard ? photoCard._photo : null;
-    space.setPointerCapture(event.pointerId);
   }
 
   function handlePointerMove(event) {
     state.mouse.x = (event.clientX / Math.max(1, state.width)) * 2 - 1;
     state.mouse.y = (event.clientY / Math.max(1, state.height)) * 2 - 1;
+    if (activePointers.has(event.pointerId)) {
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    if (activePointers.size >= 2) {
+      const currentDistance = getPointerDistance();
+      const center = getPointerCenter();
+      const distanceDelta = currentDistance - pinch.distance;
+      const centerDx = center.x - pinch.centerX;
+      const centerDy = center.y - pinch.centerY;
+
+      state.moved += Math.abs(distanceDelta) + Math.abs(centerDx) + Math.abs(centerDy);
+      state.targetVel.z = clamp(state.targetVel.z + distanceDelta * PINCH_ZOOM_FORCE, -MAX_VEL, MAX_VEL);
+      state.targetVel.x = clamp(state.targetVel.x - centerDx * DRAG_FORCE * 0.75, -MAX_VEL, MAX_VEL);
+      state.targetVel.y = clamp(state.targetVel.y - centerDy * DRAG_FORCE * 0.75, -MAX_VEL, MAX_VEL);
+
+      pinch.active = true;
+      pinch.distance = currentDistance;
+      pinch.centerX = center.x;
+      pinch.centerY = center.y;
+      return;
+    }
 
     if (!state.dragging || event.pointerId !== state.pointerId) return;
 
@@ -318,22 +365,66 @@
     state.lastX = event.clientX;
     state.lastY = event.clientY;
 
-    state.targetVel.x = clamp(state.targetVel.x - dx * 0.04, -MAX_VEL, MAX_VEL);
-    state.targetVel.y = clamp(state.targetVel.y - dy * 0.04, -MAX_VEL, MAX_VEL);
+    state.targetVel.x = clamp(state.targetVel.x - dx * DRAG_FORCE, -MAX_VEL, MAX_VEL);
+    state.targetVel.y = clamp(state.targetVel.y - dy * DRAG_FORCE, -MAX_VEL, MAX_VEL);
   }
 
   function handlePointerUp(event) {
-    if (event.pointerId !== state.pointerId) return;
+    if (space.hasPointerCapture && space.hasPointerCapture(event.pointerId)) {
+      space.releasePointerCapture(event.pointerId);
+    }
+    activePointers.delete(event.pointerId);
+
+    if (activePointers.size < 2) {
+      pinch.active = false;
+    }
+
+    if (event.pointerId !== state.pointerId) {
+      if (activePointers.size === 1) {
+        const nextPointer = activePointers.entries().next().value;
+        if (nextPointer) {
+          state.dragging = true;
+          state.pointerId = nextPointer[0];
+          state.lastX = nextPointer[1].x;
+          state.lastY = nextPointer[1].y;
+          state.pressedPhoto = null;
+        }
+      }
+      return;
+    }
+
     const shouldOpenPhoto = state.pressedPhoto && state.moved < 8;
     const photo = state.pressedPhoto;
     state.dragging = false;
     state.pointerId = null;
     state.pressedPhoto = null;
-    space.releasePointerCapture(event.pointerId);
     if (shouldOpenPhoto) {
       event.preventDefault();
       openPhoto(photo);
     }
+  }
+
+  function getPointerList() {
+    return Array.from(activePointers.values());
+  }
+
+  function getPointerDistance() {
+    const points = getPointerList();
+    if (points.length < 2) return 0;
+    const dx = points[0].x - points[1].x;
+    const dy = points[0].y - points[1].y;
+    return Math.hypot(dx, dy);
+  }
+
+  function getPointerCenter() {
+    const points = getPointerList();
+    if (points.length < 2) {
+      return { x: state.lastX, y: state.lastY };
+    }
+    return {
+      x: (points[0].x + points[1].x) / 2,
+      y: (points[0].y + points[1].y) / 2
+    };
   }
 
   function resize() {
@@ -349,7 +440,7 @@
 
   space.addEventListener("wheel", (event) => {
     event.preventDefault();
-    state.targetVel.z = clamp(state.targetVel.z - event.deltaY * 0.024, -MAX_VEL, MAX_VEL);
+    state.targetVel.z = clamp(state.targetVel.z - event.deltaY * WHEEL_FORCE, -MAX_VEL, MAX_VEL);
   }, { passive: false });
 
   function updateMusicButton(isPlaying) {
@@ -416,12 +507,12 @@
 
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closePhoto();
-    if (event.key === "ArrowLeft" || event.key === "a") state.targetVel.x -= 2.2;
-    if (event.key === "ArrowRight" || event.key === "d") state.targetVel.x += 2.2;
-    if (event.key === "ArrowUp" || event.key === "w") state.targetVel.y -= 2.2;
-    if (event.key === "ArrowDown" || event.key === "s") state.targetVel.y += 2.2;
-    if (event.key === "q") state.targetVel.z -= 2.2;
-    if (event.key === "e") state.targetVel.z += 2.2;
+    if (event.key === "ArrowLeft" || event.key === "a") state.targetVel.x -= 3.8;
+    if (event.key === "ArrowRight" || event.key === "d") state.targetVel.x += 3.8;
+    if (event.key === "ArrowUp" || event.key === "w") state.targetVel.y -= 3.8;
+    if (event.key === "ArrowDown" || event.key === "s") state.targetVel.y += 3.8;
+    if (event.key === "q") state.targetVel.z -= 3.8;
+    if (event.key === "e") state.targetVel.z += 3.8;
   });
 
   window.addEventListener("resize", resize);
