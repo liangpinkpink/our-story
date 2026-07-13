@@ -352,10 +352,7 @@ input {
 }
 
 .caption {
-  margin-top: 16px;
-  color: var(--muted);
-  font-size: 14px;
-  text-align: center;
+  display: none;
 }
 
 .close-button {

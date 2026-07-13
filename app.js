@@ -222,7 +222,9 @@
         return;
       }
 
-      const scale = FOCAL_LENGTH / depth;
+      const rawScale = FOCAL_LENGTH / depth;
+      const maxProjectedWidth = state.width <= 640 ? state.width * 0.58 : state.width * 0.36;
+      const scale = Math.min(rawScale, maxProjectedWidth / plane.width);
       const screenX = centerX + dx * scale;
       const screenY = centerY + dy * scale;
       const edgeFade = Math.max(
@@ -291,8 +293,8 @@
 
   function openPhoto(photo) {
     lightboxImage.src = photo.src;
-    lightboxImage.alt = photo.title;
-    lightboxCaption.textContent = photo.title;
+    lightboxImage.alt = "";
+    lightboxCaption.textContent = "";
     lightbox.classList.add("is-open");
     lightbox.setAttribute("aria-hidden", "false");
     closeLightbox.focus();
@@ -301,7 +303,11 @@
   function closePhoto() {
     lightbox.classList.remove("is-open");
     lightbox.setAttribute("aria-hidden", "true");
-    lightboxImage.removeAttribute("src");
+    window.setTimeout(() => {
+      if (!lightbox.classList.contains("is-open")) {
+        lightboxImage.removeAttribute("src");
+      }
+    }, 260);
   }
 
   function handlePointerDown(event) {
