@@ -453,6 +453,9 @@
     if (musicUnavailable) return;
     try {
       backgroundMusic.volume = 0.42;
+      if (!backgroundMusic.currentSrc) {
+        backgroundMusic.load();
+      }
       await backgroundMusic.play();
       updateMusicButton(true);
     } catch {
