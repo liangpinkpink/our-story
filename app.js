@@ -80,6 +80,34 @@
     return a + (b - a) * t;
   }
 
+  function smoothstep(edge0, edge1, value) {
+    const t = clamp((value - edge0) / Math.max(1, edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
+  function isMobileView() {
+    return state.width <= 760 || window.matchMedia("(pointer: coarse)").matches;
+  }
+
+  function getRenderProfile() {
+    const mobile = isMobileView();
+    return {
+      renderDistance: mobile ? 1 : RENDER_DISTANCE,
+      fadeMargin: mobile ? 1 : FADE_MARGIN,
+      far: mobile ? 3300 : FAR,
+      near: mobile ? 220 : NEAR,
+      nearFade: mobile ? 520 : 260,
+      farFadeStart: mobile ? 1250 : 1850,
+      farFadeRange: mobile ? 1500 : 2300,
+      maxWidthRatio: mobile ? 0.5 : 0.34
+    };
+  }
+
+  function softCap(value, max) {
+    const ratio = value / Math.max(0.001, max);
+    return value / Math.pow(1 + Math.pow(ratio, 4), 0.25);
+  }
+
   function initialPhotos() {
     const manifest = Array.isArray(window.WEDDING_PHOTOS) ? window.WEDDING_PHOTOS : [];
     if (manifest.length) {
@@ -145,12 +173,12 @@
     card._photo = photo;
     card._opacity = 0;
 
-    image.src = photo.src;
     image.alt = photo.title;
     image.loading = "lazy";
     image.decoding = "async";
     image.addEventListener("load", () => card.classList.add("is-loaded"));
     card.appendChild(image);
+    card._image = image;
 
     card.addEventListener("click", (event) => {
       event.preventDefault();
@@ -165,12 +193,20 @@
     const cx = Math.floor(state.camera.x / CHUNK_SIZE);
     const cy = Math.floor(state.camera.y / CHUNK_SIZE);
     const cz = Math.floor(state.camera.z / CHUNK_SIZE);
-    const key = cx + "," + cy + "," + cz + "," + state.seed;
+    const profile = getRenderProfile();
+    const key = [
+      cx,
+      cy,
+      cz,
+      state.seed,
+      profile.renderDistance,
+      profile.fadeMargin
+    ].join(",");
 
     if (!force && key === state.chunkKey) return;
     state.chunkKey = key;
 
-    const maxDist = RENDER_DISTANCE + FADE_MARGIN;
+    const maxDist = profile.renderDistance + profile.fadeMargin;
     const planes = [];
 
     for (let dx = -maxDist; dx <= maxDist; dx += 1) {
@@ -188,16 +224,30 @@
     }
 
     const existing = new Map(cards.map((card) => [card._plane.id, card]));
-    cards = planes.map((plane) => {
+    const nextIds = new Set();
+    const nextCards = planes.map((plane) => {
       const current = existing.get(plane.id);
+      nextIds.add(plane.id);
       if (current) {
         current._plane = plane;
         return current;
       }
       return makeCard(plane);
     });
-    world.replaceChildren();
-    cards.forEach((card) => world.appendChild(card));
+
+    cards.forEach((card) => {
+      if (!nextIds.has(card._plane.id)) {
+        card.remove();
+      }
+    });
+
+    nextCards.forEach((card) => {
+      if (!card.parentNode) {
+        world.appendChild(card);
+      }
+    });
+
+    cards = nextCards;
     countLabel.textContent = String(photos.length);
   }
 
@@ -205,17 +255,18 @@
     const time = performance.now();
     const centerX = state.width / 2;
     const centerY = state.height / 2;
+    const profile = getRenderProfile();
 
     cards.forEach((card) => {
       const plane = card._plane;
-      const floatAmount = state.float ? clamp((plane.z - state.camera.z) / FAR, 0.12, 1) : 0;
+      const floatAmount = state.float ? clamp((plane.z - state.camera.z) / profile.far, 0.12, 1) : 0;
       const px = plane.x + Math.cos(time * 0.000032 + plane.phase) * 18 * floatAmount;
       const py = plane.y + Math.sin(time * 0.000028 + plane.phase) * 18 * floatAmount;
       const dx = px - state.camera.x - state.drift.x;
       const dy = py - state.camera.y - state.drift.y;
       const depth = plane.z - state.camera.z;
 
-      if (depth < NEAR || depth > FAR) {
+      if (depth < profile.near || depth > profile.far) {
         card._opacity = lerp(card._opacity || 0, 0, 0.075);
         card.style.opacity = card._opacity.toFixed(3);
         card.style.pointerEvents = "none";
@@ -223,27 +274,36 @@
       }
 
       const rawScale = FOCAL_LENGTH / depth;
-      const maxProjectedWidth = state.width <= 640 ? state.width * 0.58 : state.width * 0.36;
-      const scale = Math.min(rawScale, maxProjectedWidth / plane.width);
+      const maxProjectedWidth = state.width * profile.maxWidthRatio;
+      const scale = softCap(rawScale, maxProjectedWidth / plane.width);
       const screenX = centerX + dx * scale;
       const screenY = centerY + dy * scale;
       const edgeFade = Math.max(
         Math.abs(screenX - centerX) / (state.width * 0.74),
         Math.abs(screenY - centerY) / (state.height * 0.74)
       );
-      const depthFade =
-        depth < 360
-          ? clamp((depth - NEAR) / 180, 0, 1)
-          : Math.pow(1 - clamp((depth - 1850) / 2300, 0, 0.98), 1.7);
+      const nearFade = smoothstep(profile.near, profile.near + profile.nearFade, depth);
+      const farFade = Math.pow(
+        1 - clamp((depth - profile.farFadeStart) / profile.farFadeRange, 0, 0.98),
+        1.7
+      );
+      const depthFade = Math.min(nearFade, farFade);
       const chunkFade =
-        plane.chunkDist <= RENDER_DISTANCE
+        plane.chunkDist <= profile.renderDistance
           ? 1
-          : 1 - clamp((plane.chunkDist - RENDER_DISTANCE) / Math.max(FADE_MARGIN, 0.001), 0, 1);
+          : 1 - clamp((plane.chunkDist - profile.renderDistance) / Math.max(profile.fadeMargin, 0.001), 0, 1);
       const targetOpacity = clamp((1.12 - edgeFade) * depthFade * chunkFade * 0.92, 0, 1);
       const fadeEase = targetOpacity > (card._opacity || 0) ? 0.13 : 0.075;
       const opacity = lerp(card._opacity || 0, targetOpacity, fadeEase);
-      const blur = clamp((depth - 1500) / 560, 0, 6.4);
+      const blur =
+        profile.renderDistance === 1
+          ? clamp((depth - 1300) / 720, 0, 2.2)
+          : clamp((depth - 1500) / 560, 0, 6.4);
       const brightness = 0.76 + clamp(scale, 0, 1.25) * 0.28;
+
+      if (targetOpacity > 0.035 && !card._image.getAttribute("src")) {
+        card._image.src = card._photo.src;
+      }
 
       card._opacity = opacity;
       card.style.opacity = opacity.toFixed(3);
@@ -436,6 +496,7 @@
   function resize() {
     state.width = window.innerWidth;
     state.height = window.innerHeight;
+    updateChunks(true);
     renderCards();
   }
 
