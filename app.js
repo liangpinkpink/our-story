@@ -269,7 +269,8 @@
         return;
       }
 
-      const scale = FOCAL_LENGTH / depth;
+      const projectedLimit = (state.width * (state.width <= 760 ? 0.52 : 0.36)) / plane.width;
+      const scale = Math.min(FOCAL_LENGTH / depth, projectedLimit);
       const screenX = centerX + dx * scale;
       const screenY = centerY + dy * scale;
       const edgeFade = Math.max(
