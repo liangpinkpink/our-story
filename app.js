@@ -98,10 +98,11 @@
       itemsPerChunk: mobile ? 2 : ITEMS_PER_CHUNK,
       far: mobile ? 4300 : FAR,
       near: mobile ? 150 : NEAR,
-      nearFade: mobile ? 940 : 360,
-      farFadeStart: mobile ? 1900 : 1850,
-      farFadeRange: mobile ? 2700 : 2300,
-      maxWidthRatio: mobile ? 0.52 : 0.34
+      nearFade: mobile ? 520 : 300,
+      farFadeStart: mobile ? 1350 : 1850,
+      farFadeRange: mobile ? 2500 : 2300,
+      maxWidthRatio: mobile ? 0.5 : 0.34,
+      depthContrast: mobile ? 1.55 : 1.28
     };
   }
 
@@ -278,7 +279,9 @@
 
       const rawScale = FOCAL_LENGTH / depth;
       const maxProjectedWidth = state.width * profile.maxWidthRatio;
-      const scale = softCap(rawScale, maxProjectedWidth / plane.width);
+      const depthProgress = clamp((depth - profile.near) / Math.max(1, profile.far - profile.near), 0, 1);
+      const distanceScale = 1 - Math.pow(depthProgress, 1.15) * (profile.mobile ? 0.32 : 0.22);
+      const scale = softCap(rawScale * distanceScale, maxProjectedWidth / plane.width);
       const screenX = centerX + dx * scale;
       const screenY = centerY + dy * scale;
       const edgeFade = Math.max(
@@ -291,18 +294,20 @@
         1.7
       );
       const depthFade = Math.min(nearFade, farFade);
+      const depthShade = Math.pow(1 - depthProgress * 0.84, profile.depthContrast);
       const chunkFade =
         plane.chunkDist <= profile.renderDistance
           ? 1
           : 1 - clamp((plane.chunkDist - profile.renderDistance) / Math.max(profile.fadeMargin, 0.001), 0, 1);
-      const targetOpacity = clamp((1.16 - edgeFade) * depthFade * chunkFade * 0.94, 0, 1);
+      const targetOpacity = clamp((1.16 - edgeFade) * depthFade * depthShade * chunkFade * 0.98, 0, 1);
       const fadeEase = targetOpacity > (card._opacity || 0) ? 0.085 : 0.065;
       const opacity = lerp(card._opacity || 0, targetOpacity, fadeEase);
       const blur =
         profile.mobile
           ? clamp((depth - 1450) / 900, 0, 2.6)
           : clamp((depth - 1500) / 560, 0, 6.4);
-      const brightness = 0.76 + clamp(scale, 0, 1.25) * 0.28;
+      const brightness = 0.42 + depthShade * 0.54 + clamp(scale, 0, 1.2) * 0.1;
+      const contrast = 0.88 + depthShade * 0.16;
 
       if (targetOpacity > 0.006 && !card._image.getAttribute("src")) {
         card._image.src = card._photo.src;
@@ -312,7 +317,12 @@
       card.style.opacity = opacity.toFixed(3);
       card.style.pointerEvents = opacity > 0.16 ? "auto" : "none";
       card.style.zIndex = String(Math.round(100000 - depth));
-      card.style.filter = "blur(" + blur.toFixed(2) + "px) brightness(" + brightness.toFixed(3) + ")";
+      card.style.borderColor = "rgba(245, 241, 232, " + (0.08 + depthShade * 0.16).toFixed(3) + ")";
+      card.style.filter = [
+        "blur(" + blur.toFixed(2) + "px)",
+        "brightness(" + brightness.toFixed(3) + ")",
+        "contrast(" + contrast.toFixed(3) + ")"
+      ].join(" ");
       card.style.transform = [
         "translate3d(" + screenX.toFixed(2) + "px, " + screenY.toFixed(2) + "px, 0)",
         "translate3d(-50%, -50%, 0)",
