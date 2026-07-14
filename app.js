@@ -269,7 +269,8 @@
         return;
       }
 
-      const scale = FOCAL_LENGTH / depth;
+      const projectedLimit = (state.width * (state.width <= 760 ? 0.68 : 0.44)) / plane.width;
+      const scale = softCap(FOCAL_LENGTH / depth, projectedLimit);
       const screenX = centerX + dx * scale;
       const screenY = centerY + dy * scale;
       const edgeFade = Math.max(
