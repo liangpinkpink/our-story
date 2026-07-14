@@ -319,11 +319,23 @@
       );
       const depthFade = Math.min(nearFade, farFade);
       const depthShade = Math.pow(1 - depthProgress * 0.84, profile.depthContrast);
+      const frontSolid = smoothstep(
+        profile.near + profile.nearFade * 0.2,
+        profile.near + profile.nearFade * 0.95,
+        depth
+      ) * (1 - smoothstep(
+        profile.near + (profile.mobile ? 1180 : 980),
+        profile.near + (profile.mobile ? 1900 : 1500),
+        depth
+      ));
+      const edgeVisibility = clamp(1.08 - edgeFade, 0, 1);
       const chunkFade =
         plane.chunkDist <= profile.renderDistance
           ? 1
           : 1 - clamp((plane.chunkDist - profile.renderDistance) / Math.max(profile.fadeMargin, 0.001), 0, 1);
-      const targetOpacity = clamp((1.16 - edgeFade) * depthFade * depthShade * chunkFade * 0.98, 0, 1);
+      const farOpacity = (1.16 - edgeFade) * depthFade * depthShade * chunkFade * 0.98;
+      const solidOpacity = edgeVisibility * frontSolid * chunkFade;
+      const targetOpacity = clamp(Math.max(farOpacity, solidOpacity), 0, 1);
       if (targetOpacity > 0.002) {
         ensureImageLoading(card);
       }
@@ -334,14 +346,14 @@
         profile.mobile
           ? clamp((depth - 1450) / 900, 0, 2.6)
           : clamp((depth - 1500) / 560, 0, 6.4);
-      const brightness = 0.42 + depthShade * 0.54 + clamp(scale, 0, 1.2) * 0.1;
-      const contrast = 0.88 + depthShade * 0.16;
+      const brightness = 0.42 + Math.max(depthShade, frontSolid * 0.95) * 0.54 + clamp(scale, 0, 1.2) * 0.1;
+      const contrast = 0.88 + Math.max(depthShade, frontSolid * 0.95) * 0.16;
 
       card._opacity = opacity;
       card.style.opacity = opacity.toFixed(3);
       card.style.pointerEvents = opacity > 0.16 ? "auto" : "none";
       card.style.zIndex = String(Math.round(100000 - depth));
-      card.style.borderColor = "rgba(245, 241, 232, " + (0.08 + depthShade * 0.16).toFixed(3) + ")";
+      card.style.borderColor = "rgba(245, 241, 232, " + (0.08 + Math.max(depthShade, frontSolid) * 0.16).toFixed(3) + ")";
       card.style.filter = [
         "blur(" + blur.toFixed(2) + "px)",
         "brightness(" + brightness.toFixed(3) + ")",
