@@ -25,7 +25,7 @@
   const VEL_DECAY = 0.89;
   const DRAG_FORCE = 0.12;
   const WHEEL_FORCE = 0.074;
-  const PINCH_ZOOM_FORCE = 0.42;
+  const PINCH_ZOOM_FORCE = 0.28;
 
   const state = {
     camera: { x: 0, y: 0, z: 0 },
@@ -101,7 +101,7 @@
       nearFade: mobile ? 520 : 300,
       farFadeStart: mobile ? 1350 : 1850,
       farFadeRange: mobile ? 2500 : 2300,
-      maxWidthRatio: mobile ? 0.5 : 0.34,
+      maxWidthRatio: mobile ? 0.62 : 0.38,
       depthContrast: mobile ? 1.55 : 1.28
     };
   }
@@ -245,14 +245,17 @@
       nextIds.add(plane.id);
       if (current) {
         current._plane = plane;
+        current._retiring = false;
         return current;
       }
       return makeCard(plane);
     });
 
+    const retiringCards = [];
     cards.forEach((card) => {
       if (!nextIds.has(card._plane.id)) {
-        card.remove();
+        card._retiring = true;
+        retiringCards.push(card);
       }
     });
 
@@ -262,7 +265,7 @@
       }
     });
 
-    cards = nextCards;
+    cards = nextCards.concat(retiringCards);
     countLabel.textContent = String(photos.length);
   }
 
@@ -281,6 +284,16 @@
       const dy = py - state.camera.y - state.drift.y;
       const depth = plane.z - state.camera.z;
 
+      if (card._retiring) {
+        card._opacity = lerp(card._opacity || 0, 0, 0.1);
+        card.style.opacity = card._opacity.toFixed(3);
+        card.style.pointerEvents = "none";
+        if (card._opacity < 0.01) {
+          card.remove();
+        }
+        return;
+      }
+
       if (depth < profile.near || depth > profile.far) {
         card._opacity = lerp(card._opacity || 0, 0, 0.075);
         card.style.opacity = card._opacity.toFixed(3);
@@ -291,7 +304,7 @@
       const rawScale = FOCAL_LENGTH / depth;
       const maxProjectedWidth = state.width * profile.maxWidthRatio;
       const depthProgress = clamp((depth - profile.near) / Math.max(1, profile.far - profile.near), 0, 1);
-      const distanceScale = 1 - Math.pow(depthProgress, 1.15) * (profile.mobile ? 0.32 : 0.22);
+      const distanceScale = 1 - Math.pow(depthProgress, 1.08) * (profile.mobile ? 0.42 : 0.28);
       const scale = softCap(rawScale * distanceScale, maxProjectedWidth / plane.width);
       const screenX = centerX + dx * scale;
       const screenY = centerY + dy * scale;
