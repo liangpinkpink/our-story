@@ -99,6 +99,8 @@
       far: mobile ? 4300 : FAR,
       near: mobile ? 150 : NEAR,
       nearFade: mobile ? 520 : 300,
+      frontSolidEnd: mobile ? 1450 : 1250,
+      frontSolidFadeEnd: mobile ? 2100 : 1700,
       farFadeStart: mobile ? 1350 : 1850,
       farFadeRange: mobile ? 2500 : 2300,
       maxWidthRatio: mobile ? 0.62 : 0.38,
@@ -324,27 +326,28 @@
         profile.near + profile.nearFade * 0.95,
         depth
       ) * (1 - smoothstep(
-        profile.near + (profile.mobile ? 1180 : 980),
-        profile.near + (profile.mobile ? 1900 : 1500),
+        profile.frontSolidEnd,
+        profile.frontSolidFadeEnd,
         depth
       ));
       const edgeVisibility = clamp(1.08 - edgeFade, 0, 1);
+      const isFrontSolid = frontSolid > 0.08 && edgeVisibility > 0.02;
       const chunkFade =
         plane.chunkDist <= profile.renderDistance
           ? 1
           : 1 - clamp((plane.chunkDist - profile.renderDistance) / Math.max(profile.fadeMargin, 0.001), 0, 1);
       const farOpacity = (1.16 - edgeFade) * depthFade * depthShade * chunkFade * 0.98;
       const solidOpacity = edgeVisibility * frontSolid * chunkFade;
-      const targetOpacity = clamp(Math.max(farOpacity, solidOpacity), 0, 1);
+      const targetOpacity = isFrontSolid ? 1 : clamp(Math.max(farOpacity, solidOpacity), 0, 1);
       if (targetOpacity > 0.002) {
         ensureImageLoading(card);
       }
       const visibleTarget = card._loaded ? targetOpacity : 0;
       const fadeEase = visibleTarget > (card._opacity || 0) ? 0.055 : 0.08;
-      const opacity = lerp(card._opacity || 0, visibleTarget, fadeEase);
+      const opacity = isFrontSolid && card._loaded ? 1 : lerp(card._opacity || 0, visibleTarget, fadeEase);
       const blur =
         profile.mobile
-          ? clamp((depth - 1450) / 900, 0, 2.6)
+          ? 0
           : clamp((depth - 1500) / 560, 0, 6.4);
       const brightness = 0.42 + Math.max(depthShade, frontSolid * 0.95) * 0.54 + clamp(scale, 0, 1.2) * 0.1;
       const contrast = 0.88 + Math.max(depthShade, frontSolid * 0.95) * 0.16;
@@ -354,11 +357,14 @@
       card.style.pointerEvents = opacity > 0.16 ? "auto" : "none";
       card.style.zIndex = String(Math.round(100000 - depth));
       card.style.borderColor = "rgba(245, 241, 232, " + (0.08 + Math.max(depthShade, frontSolid) * 0.16).toFixed(3) + ")";
-      card.style.filter = [
-        "blur(" + blur.toFixed(2) + "px)",
-        "brightness(" + brightness.toFixed(3) + ")",
-        "contrast(" + contrast.toFixed(3) + ")"
-      ].join(" ");
+      card.style.filter =
+        profile.mobile && isFrontSolid
+          ? "none"
+          : [
+            "blur(" + blur.toFixed(2) + "px)",
+            "brightness(" + brightness.toFixed(3) + ")",
+            "contrast(" + contrast.toFixed(3) + ")"
+          ].join(" ");
       card.style.transform = [
         "translate3d(" + screenX.toFixed(2) + "px, " + screenY.toFixed(2) + "px, 0)",
         "translate3d(-50%, -50%, 0)",
