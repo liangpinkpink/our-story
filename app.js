@@ -92,14 +92,16 @@
   function getRenderProfile() {
     const mobile = isMobileView();
     return {
-      renderDistance: mobile ? 1 : RENDER_DISTANCE,
+      mobile,
+      renderDistance: mobile ? 2 : RENDER_DISTANCE,
       fadeMargin: mobile ? 1 : FADE_MARGIN,
-      far: mobile ? 3300 : FAR,
-      near: mobile ? 220 : NEAR,
-      nearFade: mobile ? 520 : 260,
-      farFadeStart: mobile ? 1250 : 1850,
-      farFadeRange: mobile ? 1500 : 2300,
-      maxWidthRatio: mobile ? 0.5 : 0.34
+      itemsPerChunk: mobile ? 2 : ITEMS_PER_CHUNK,
+      far: mobile ? 4300 : FAR,
+      near: mobile ? 150 : NEAR,
+      nearFade: mobile ? 940 : 360,
+      farFadeStart: mobile ? 1900 : 1850,
+      farFadeRange: mobile ? 2700 : 2300,
+      maxWidthRatio: mobile ? 0.52 : 0.34
     };
   }
 
@@ -200,7 +202,8 @@
       cz,
       state.seed,
       profile.renderDistance,
-      profile.fadeMargin
+      profile.fadeMargin,
+      profile.itemsPerChunk
     ].join(",");
 
     if (!force && key === state.chunkKey) return;
@@ -214,7 +217,7 @@
         for (let dz = 0; dz <= maxDist + 1; dz += 1) {
           const dist = chunkDistance(dx, dy, dz);
           if (dist > maxDist) continue;
-          for (let item = 0; item < ITEMS_PER_CHUNK; item += 1) {
+          for (let item = 0; item < profile.itemsPerChunk; item += 1) {
             const plane = makePlane(cx + dx, cy + dy, cz + dz, item);
             plane.chunkDist = dist;
             planes.push(plane);
@@ -292,16 +295,16 @@
         plane.chunkDist <= profile.renderDistance
           ? 1
           : 1 - clamp((plane.chunkDist - profile.renderDistance) / Math.max(profile.fadeMargin, 0.001), 0, 1);
-      const targetOpacity = clamp((1.12 - edgeFade) * depthFade * chunkFade * 0.92, 0, 1);
-      const fadeEase = targetOpacity > (card._opacity || 0) ? 0.13 : 0.075;
+      const targetOpacity = clamp((1.16 - edgeFade) * depthFade * chunkFade * 0.94, 0, 1);
+      const fadeEase = targetOpacity > (card._opacity || 0) ? 0.085 : 0.065;
       const opacity = lerp(card._opacity || 0, targetOpacity, fadeEase);
       const blur =
-        profile.renderDistance === 1
-          ? clamp((depth - 1300) / 720, 0, 2.2)
+        profile.mobile
+          ? clamp((depth - 1450) / 900, 0, 2.6)
           : clamp((depth - 1500) / 560, 0, 6.4);
       const brightness = 0.76 + clamp(scale, 0, 1.25) * 0.28;
 
-      if (targetOpacity > 0.035 && !card._image.getAttribute("src")) {
+      if (targetOpacity > 0.006 && !card._image.getAttribute("src")) {
         card._image.src = card._photo.src;
       }
 
