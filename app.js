@@ -25,7 +25,7 @@
   const VEL_DECAY = 0.89;
   const DRAG_FORCE = 0.12;
   const WHEEL_FORCE = 0.074;
-  const PINCH_ZOOM_FORCE = 0.28;
+  const PINCH_ZOOM_FORCE = 0.42;
 
   const state = {
     camera: { x: 0, y: 0, z: 0 },
@@ -185,19 +185,13 @@
     card._plane = plane;
     card._photo = photo;
     card._opacity = 0;
-    card._loaded = false;
-    card._loading = false;
 
-    image.alt = photo.title;
-    image.loading = "eager";
-    image.decoding = "async";
-    image.addEventListener("load", () => {
-      card._loaded = true;
-      card.classList.add("is-loaded");
-    });
     image.src = photo.src;
+    image.alt = photo.title;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.addEventListener("load", () => card.classList.add("is-loaded"));
     card.appendChild(image);
-    card._image = image;
 
     card.addEventListener("click", (event) => {
       event.preventDefault();
@@ -218,21 +212,12 @@
     const cx = Math.floor(state.camera.x / CHUNK_SIZE);
     const cy = Math.floor(state.camera.y / CHUNK_SIZE);
     const cz = Math.floor(state.camera.z / CHUNK_SIZE);
-    const profile = getRenderProfile();
-    const key = [
-      cx,
-      cy,
-      cz,
-      state.seed,
-      profile.renderDistance,
-      profile.fadeMargin,
-      profile.itemsPerChunk
-    ].join(",");
+    const key = cx + "," + cy + "," + cz + "," + state.seed;
 
     if (!force && key === state.chunkKey) return;
     state.chunkKey = key;
 
-    const maxDist = profile.renderDistance + profile.fadeMargin;
+    const maxDist = RENDER_DISTANCE + FADE_MARGIN;
     const planes = [];
 
     for (let dx = -maxDist; dx <= maxDist; dx += 1) {
@@ -240,7 +225,7 @@
         for (let dz = 0; dz <= maxDist + 1; dz += 1) {
           const dist = chunkDistance(dx, dy, dz);
           if (dist > maxDist) continue;
-          for (let item = 0; item < profile.itemsPerChunk; item += 1) {
+          for (let item = 0; item < ITEMS_PER_CHUNK; item += 1) {
             const plane = makePlane(cx + dx, cy + dy, cz + dz, item);
             plane.chunkDist = dist;
             planes.push(plane);
@@ -250,33 +235,16 @@
     }
 
     const existing = new Map(cards.map((card) => [card._plane.id, card]));
-    const nextIds = new Set();
-    const nextCards = planes.map((plane) => {
+    cards = planes.map((plane) => {
       const current = existing.get(plane.id);
-      nextIds.add(plane.id);
       if (current) {
         current._plane = plane;
-        current._retiring = false;
         return current;
       }
       return makeCard(plane);
     });
-
-    const retiringCards = [];
-    cards.forEach((card) => {
-      if (!nextIds.has(card._plane.id)) {
-        card._retiring = true;
-        retiringCards.push(card);
-      }
-    });
-
-    nextCards.forEach((card) => {
-      if (!card.parentNode) {
-        world.appendChild(card);
-      }
-    });
-
-    cards = nextCards.concat(retiringCards);
+    world.replaceChildren();
+    cards.forEach((card) => world.appendChild(card));
     countLabel.textContent = String(photos.length);
   }
 
@@ -284,89 +252,49 @@
     const time = performance.now();
     const centerX = state.width / 2;
     const centerY = state.height / 2;
-    const profile = getRenderProfile();
 
     cards.forEach((card) => {
       const plane = card._plane;
-      const floatAmount = state.float ? clamp((plane.z - state.camera.z) / profile.far, 0.12, 1) : 0;
+      const floatAmount = state.float ? clamp((plane.z - state.camera.z) / FAR, 0.12, 1) : 0;
       const px = plane.x + Math.cos(time * 0.000032 + plane.phase) * 18 * floatAmount;
       const py = plane.y + Math.sin(time * 0.000028 + plane.phase) * 18 * floatAmount;
       const dx = px - state.camera.x - state.drift.x;
       const dy = py - state.camera.y - state.drift.y;
       const depth = plane.z - state.camera.z;
 
-      if (card._retiring) {
-        card._opacity = lerp(card._opacity || 0, 0, 0.1);
-        card.style.opacity = card._opacity.toFixed(3);
-        card.style.pointerEvents = "none";
-        if (card._opacity < 0.01) {
-          card.remove();
-        }
-        return;
-      }
-
-      if (depth < profile.near || depth > profile.far) {
+      if (depth < NEAR || depth > FAR) {
         card._opacity = lerp(card._opacity || 0, 0, 0.075);
         card.style.opacity = card._opacity.toFixed(3);
         card.style.pointerEvents = "none";
         return;
       }
 
-      const rawScale = FOCAL_LENGTH / depth;
-      const maxProjectedWidth = state.width * profile.maxWidthRatio;
-      const depthProgress = clamp((depth - profile.near) / Math.max(1, profile.far - profile.near), 0, 1);
-      const distanceScale = 1 - Math.pow(depthProgress, 1.08) * (profile.mobile ? 0.42 : 0.28);
-      const scale = softCap(rawScale * distanceScale, maxProjectedWidth / plane.width);
+      const scale = FOCAL_LENGTH / depth;
       const screenX = centerX + dx * scale;
       const screenY = centerY + dy * scale;
       const edgeFade = Math.max(
         Math.abs(screenX - centerX) / (state.width * 0.74),
         Math.abs(screenY - centerY) / (state.height * 0.74)
       );
-      const nearFade = smoothstep(profile.near, profile.near + profile.nearFade, depth);
-      const farFade = Math.pow(
-        1 - clamp((depth - profile.farFadeStart) / profile.farFadeRange, 0, 0.98),
-        1.7
-      );
-      const depthFade = Math.min(nearFade, farFade);
-      const depthShade = Math.pow(1 - depthProgress * 0.84, profile.depthContrast);
-      const frontSolid = smoothstep(
-        profile.near + profile.nearFade * 0.2,
-        profile.near + profile.nearFade * 0.95,
-        depth
-      ) * (1 - smoothstep(
-        profile.frontSolidEnd,
-        profile.frontSolidFadeEnd,
-        depth
-      ));
-      const edgeVisibility = clamp(1.08 - edgeFade, 0, 1);
+      const depthFade =
+        depth < 360
+          ? clamp((depth - NEAR) / 180, 0, 1)
+          : Math.pow(1 - clamp((depth - 1850) / 2300, 0, 0.98), 1.7);
       const chunkFade =
-        plane.chunkDist <= profile.renderDistance
+        plane.chunkDist <= RENDER_DISTANCE
           ? 1
-          : 1 - clamp((plane.chunkDist - profile.renderDistance) / Math.max(profile.fadeMargin, 0.001), 0, 1);
-      const farOpacity = (1.16 - edgeFade) * depthFade * depthShade * chunkFade * 0.98;
-      const solidOpacity = edgeVisibility * frontSolid * chunkFade;
-      const targetOpacity = clamp(Math.max(farOpacity, solidOpacity), 0, 1);
-      const visibleTarget = card._loaded ? targetOpacity : 0;
-      const fadeEase = visibleTarget > (card._opacity || 0) ? 0.055 : 0.08;
-      const opacity = lerp(card._opacity || 0, visibleTarget, fadeEase);
-      const blur =
-        profile.mobile
-          ? clamp((depth - 1450) / 900, 0, 2.6)
-          : clamp((depth - 1500) / 560, 0, 6.4);
-      const brightness = 0.42 + Math.max(depthShade, frontSolid * 0.95) * 0.54 + clamp(scale, 0, 1.2) * 0.1;
-      const contrast = 0.88 + Math.max(depthShade, frontSolid * 0.95) * 0.16;
+          : 1 - clamp((plane.chunkDist - RENDER_DISTANCE) / Math.max(FADE_MARGIN, 0.001), 0, 1);
+      const targetOpacity = clamp((1.12 - edgeFade) * depthFade * chunkFade * 0.92, 0, 1);
+      const fadeEase = targetOpacity > (card._opacity || 0) ? 0.13 : 0.075;
+      const opacity = lerp(card._opacity || 0, targetOpacity, fadeEase);
+      const blur = clamp((depth - 1500) / 560, 0, 6.4);
+      const brightness = 0.76 + clamp(scale, 0, 1.25) * 0.28;
 
       card._opacity = opacity;
       card.style.opacity = opacity.toFixed(3);
       card.style.pointerEvents = opacity > 0.16 ? "auto" : "none";
       card.style.zIndex = String(Math.round(100000 - depth));
-      card.style.borderColor = "rgba(245, 241, 232, " + (0.08 + Math.max(depthShade, frontSolid) * 0.16).toFixed(3) + ")";
-      card.style.filter = [
-        "blur(" + blur.toFixed(2) + "px)",
-        "brightness(" + brightness.toFixed(3) + ")",
-        "contrast(" + contrast.toFixed(3) + ")"
-      ].join(" ");
+      card.style.filter = "blur(" + blur.toFixed(2) + "px) brightness(" + brightness.toFixed(3) + ")";
       card.style.transform = [
         "translate3d(" + screenX.toFixed(2) + "px, " + screenY.toFixed(2) + "px, 0)",
         "translate3d(-50%, -50%, 0)",
@@ -551,14 +479,8 @@
   }
 
   function resize() {
-    const previousWidth = state.width;
-    const previousMobile = isMobileView();
     state.width = window.innerWidth;
     state.height = window.innerHeight;
-    const currentMobile = isMobileView();
-    if (currentMobile !== previousMobile || Math.abs(state.width - previousWidth) > 96) {
-      updateChunks(true);
-    }
     renderCards();
   }
 
@@ -648,14 +570,7 @@
   });
 
   window.addEventListener("resize", resize);
-  ["gesturestart", "gesturechange", "gestureend"].forEach((name) => {
-    window.addEventListener(name, (event) => {
-      event.preventDefault();
-    }, { passive: false });
-  });
-
   photos = initialPhotos();
-  preloadPhotos();
   updateChunks(true);
   cancelAnimationFrame(rafId);
   animate();
