@@ -94,7 +94,7 @@
     return {
       mobile,
       renderDistance: mobile ? 2 : RENDER_DISTANCE,
-      fadeMargin: mobile ? 1 : FADE_MARGIN,
+      fadeMargin: mobile ? 0 : FADE_MARGIN,
       itemsPerChunk: mobile ? 2 : ITEMS_PER_CHUNK,
       far: mobile ? 4300 : FAR,
       near: mobile ? 150 : NEAR,
@@ -175,11 +175,16 @@
     card._plane = plane;
     card._photo = photo;
     card._opacity = 0;
+    card._loaded = false;
+    card._loading = false;
 
     image.alt = photo.title;
     image.loading = "lazy";
     image.decoding = "async";
-    image.addEventListener("load", () => card.classList.add("is-loaded"));
+    image.addEventListener("load", () => {
+      card._loaded = true;
+      card.classList.add("is-loaded");
+    });
     card.appendChild(image);
     card._image = image;
 
@@ -190,6 +195,12 @@
     });
 
     return card;
+  }
+
+  function ensureImageLoading(card) {
+    if (card._loaded || card._loading || card._image.getAttribute("src")) return;
+    card._loading = true;
+    card._image.src = card._photo.src;
   }
 
   function updateChunks(force) {
@@ -300,18 +311,18 @@
           ? 1
           : 1 - clamp((plane.chunkDist - profile.renderDistance) / Math.max(profile.fadeMargin, 0.001), 0, 1);
       const targetOpacity = clamp((1.16 - edgeFade) * depthFade * depthShade * chunkFade * 0.98, 0, 1);
-      const fadeEase = targetOpacity > (card._opacity || 0) ? 0.085 : 0.065;
-      const opacity = lerp(card._opacity || 0, targetOpacity, fadeEase);
+      if (targetOpacity > 0.002) {
+        ensureImageLoading(card);
+      }
+      const visibleTarget = card._loaded ? targetOpacity : 0;
+      const fadeEase = visibleTarget > (card._opacity || 0) ? 0.055 : 0.08;
+      const opacity = lerp(card._opacity || 0, visibleTarget, fadeEase);
       const blur =
         profile.mobile
           ? clamp((depth - 1450) / 900, 0, 2.6)
           : clamp((depth - 1500) / 560, 0, 6.4);
       const brightness = 0.42 + depthShade * 0.54 + clamp(scale, 0, 1.2) * 0.1;
       const contrast = 0.88 + depthShade * 0.16;
-
-      if (targetOpacity > 0.006 && !card._image.getAttribute("src")) {
-        card._image.src = card._photo.src;
-      }
 
       card._opacity = opacity;
       card.style.opacity = opacity.toFixed(3);
