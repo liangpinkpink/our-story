@@ -143,6 +143,14 @@
     });
   }
 
+  function preloadPhotos() {
+    photos.forEach((photo) => {
+      const image = new Image();
+      image.decoding = "async";
+      image.src = photo.src;
+    });
+  }
+
   function chunkDistance(dx, dy, dz) {
     return Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
   }
@@ -181,12 +189,13 @@
     card._loading = false;
 
     image.alt = photo.title;
-    image.loading = "lazy";
+    image.loading = "eager";
     image.decoding = "async";
     image.addEventListener("load", () => {
       card._loaded = true;
       card.classList.add("is-loaded");
     });
+    image.src = photo.src;
     card.appendChild(image);
     card._image = image;
 
@@ -338,9 +347,6 @@
       const farOpacity = (1.16 - edgeFade) * depthFade * depthShade * chunkFade * 0.98;
       const solidOpacity = edgeVisibility * frontSolid * chunkFade;
       const targetOpacity = clamp(Math.max(farOpacity, solidOpacity), 0, 1);
-      if (targetOpacity > 0.002) {
-        ensureImageLoading(card);
-      }
       const visibleTarget = card._loaded ? targetOpacity : 0;
       const fadeEase = visibleTarget > (card._opacity || 0) ? 0.055 : 0.08;
       const opacity = lerp(card._opacity || 0, visibleTarget, fadeEase);
@@ -545,9 +551,14 @@
   }
 
   function resize() {
+    const previousWidth = state.width;
+    const previousMobile = isMobileView();
     state.width = window.innerWidth;
     state.height = window.innerHeight;
-    updateChunks(true);
+    const currentMobile = isMobileView();
+    if (currentMobile !== previousMobile || Math.abs(state.width - previousWidth) > 96) {
+      updateChunks(true);
+    }
     renderCards();
   }
 
@@ -644,6 +655,7 @@
   });
 
   photos = initialPhotos();
+  preloadPhotos();
   updateChunks(true);
   cancelAnimationFrame(rafId);
   animate();
